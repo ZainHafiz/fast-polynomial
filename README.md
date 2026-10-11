@@ -1,4 +1,4 @@
-# algebra-lab
+# fast-polynomial
 
 A univariate polynomial library in Python, built around a performance study of
 polynomial multiplication across three algorithms, with the asymptotically
