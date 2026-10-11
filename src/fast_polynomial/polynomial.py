@@ -19,7 +19,7 @@ class Polynomial:
         coeffs_tuple = tuple(coeffs)
         if not coeffs_tuple:
             coeffs_tuple = (0,)
-        self.coeffs = coeffs_tuple
+        self._coeffs = coeffs_tuple
         self.__trim()
 
     def __trim(self) -> None:
@@ -29,10 +29,15 @@ class Polynomial:
         This particular method allows for more efficient trimming since we
         don't need to repeatedly slice the tuple, it is only sliced once.
         """
-        i = len(self.coeffs) - 1
-        while i > 0 and self.coeffs[i] == 0:
+        i = len(self._coeffs) - 1
+        while i > 0 and self._coeffs[i] == 0:
             i -= 1
-        self.coeffs = self.coeffs[: i + 1]
+        self._coeffs = self._coeffs[: i + 1]
+
+    @property
+    def coeffs(self) -> tuple[Number]:
+        """Return tuple of coefficients."""
+        return self._coeffs
 
     @property
     def degree(self) -> int:
@@ -370,19 +375,3 @@ def fft_driver(p: list[Number], q: list[Number]) -> list[Number]:
     result = FFT.multiply_polynomials(poly1=p, poly2=q)
     result = [round(x, 6) for x in result]
     return result
-
-
-if __name__ == "__main__":
-    x = Polynomial((0, 1))
-    p = x**5 + 5*x**2 + 1
-    q = x**2 + 2*x + 1
-    print("p(x) =", p)
-    print("q(x) =", q)
-    print("q(2) =", q(2))
-    print("p + q =", p + q)
-    print("p * q =", p * q)
-    print("p' =", p.derivative())
-    print("∫p dx =", p.integral())
-    print("p^3 =", p**3)
-    quotient, remainder = divmod(p, q)
-    print(f"p/q = {quotient} r {remainder}")
