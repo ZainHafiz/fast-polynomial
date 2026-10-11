@@ -1,10 +1,12 @@
 from typing import Union
 from collections.abc import Iterable
+from . import FFT
+
 
 Number = Union[int, float]
 
 
-"""Implements a Polynomial."""
+"""Immutable univariate polynomial with three multiplication algorithms."""
 
 
 class Polynomial:
@@ -42,12 +44,12 @@ class Polynomial:
         return self.coeffs[-1]
 
     @property
-    def isZero(self) -> bool:
+    def is_zero(self) -> bool:
         return self.coeffs == (0,)
 
     def __str__(self) -> str:
         """Return a readable string representation, highest degree first."""
-        if self.isZero:
+        if self.is_zero:
             return "0"
 
         parts: list[str] = []
@@ -111,7 +113,7 @@ class Polynomial:
             index = min(self.degree + 1, other.degree + 1)
             coeff_sum += self.coeffs[index:] + other.coeffs[index:]
             return Polynomial(coeff_sum)
-        elif isinstance(other, (int, float)):
+        elif isinstance(other, Number):
             return Polynomial((self.coeffs[0] + other,) + self.coeffs[1:])
         else:
             return NotImplemented
@@ -127,7 +129,7 @@ class Polynomial:
             index = min(self.degree + 1, other.degree + 1)
             dif += self.coeffs[index:] + (-other).coeffs[index:]
             return Polynomial(dif)
-        elif isinstance(other, (int, float)):
+        elif isinstance(other, Number):
             return Polynomial((self.coeffs[0] - other,) + self.coeffs[1:])
         else:
             return NotImplemented
@@ -139,25 +141,75 @@ class Polynomial:
         """
         Multiply two polynomials or a Polynomials and a scalar
 
-        Does this via convolution of the two coefficient arrays.
-        I have implemented the convolution manually, which means there is no
-        dependency on other libraries such as numpy.
+        Does this via Cooley-Tukey FFT algorithm for large degrees, the
+        Karatsuba method for smaller degrees, and a convolution for smaller
+        degrees.
         """
 
         if isinstance(other, Polynomial):
-            degree = self.degree + other.degree
-            product: list[Number] = (degree + 1)*[0.0]
-            for i, self_coeff in enumerate(self.coeffs):
-                for j, other_coeff in enumerate(other.coeffs):
-                    product[i+j] += self_coeff * other_coeff
-            return Polynomial(product)
-        elif isinstance(other, (int, float)):
+            if self.is_zero or other.is_zero:
+                return Polynomial(())
+            if self.degree == 0:
+                return other * self.leading
+            if other.degree == 0:
+                return self * other.leading
+            KARATSUBA_THRESHOLD = 500
+            FFT_THRESHOLD = 1000
+            if (len(self.coeffs) < KARATSUBA_THRESHOLD or len(other.coeffs) <
+               KARATSUBA_THRESHOLD):
+                return Polynomial(convolution(list(self.coeffs),
+                                              list(other.coeffs)))
+
+            if (len(self.coeffs) <= FFT_THRESHOLD or len(other.coeffs) <=
+               FFT_THRESHOLD):
+                return Polynomial(karat_driver(list(self.coeffs),
+                                               list(other.coeffs)))
+
+            return Polynomial(fft_driver(list(self.coeffs),
+                                         list(other.coeffs)))
+        elif isinstance(other, Number):
             return Polynomial(other * c for c in self.coeffs)
         else:
             return NotImplemented
 
     def __rmul__(self, other: Number) -> "Polynomial":
         return self * other
+
+    def multiply(self, other: 'Polynomial',
+                 method: str = "auto") -> "Polynomial":
+        """
+        Multiply two polynomials together allowing for choice of algorithms
+
+        method must be string among {"auto", "convolution", "karatsuba", "fft"}
+        , where auto calls __mul__ multiplication which changes algorithm
+        based on degree thresholds.
+        """
+        if isinstance(other, Polynomial):
+            match method:
+                case "auto":
+                    return self * other
+                case "convolution":
+                    return Polynomial(convolution(list(self.coeffs),
+                                                  list(other.coeffs)))
+                case "karatsuba":
+                    return Polynomial(karat_driver(list(self.coeffs),
+                                                   list(other.coeffs)))
+                case "fft":
+                    return Polynomial(fft_driver(list(self.coeffs),
+                                                 list(other.coeffs)))
+                case _:
+                    if isinstance(method, str):
+                        raise ValueError('method must be among keywords '
+                                         + '{"auto", "convolution", '
+                                         + '"karatsuba", "fft"}')
+                    raise TypeError('method must be of type string, and among '
+                                    + 'the keywords {"auto", "convolution", '
+                                    + '"karatsuba", "fft"}')
+        elif isinstance(other, Number):
+            return self * other
+        else:
+            raise TypeError("other argument must be of type Polynomial, "
+                            + "int or float")
 
     def __pow__(self, exponent: int) -> "Polynomial":
         """Return the polynomial raised to a non-negative integer power.
@@ -190,7 +242,7 @@ class Polynomial:
     def __divmod__(self, other: 'Polynomial' | Number) -> tuple["Polynomial",
                                                                 "Polynomial"]:
         """Implement polynomial division, returning quotient and remainder."""
-        if isinstance(other, (int, float)):
+        if isinstance(other, Number):
             if not other:
                 raise ZeroDivisionError(
                     "Cannot divide polynomial by zero scalar.")
@@ -199,13 +251,13 @@ class Polynomial:
         if not isinstance(other, Polynomial):
             return NotImplemented
         if other.degree == 0:
-            if other.isZero:
+            if other.is_zero:
                 raise ZeroDivisionError(
                     "Cannot divide polynomial by the zero polynomial.")
             return (Polynomial(coeff / other.leading for coeff in self.coeffs),
                     Polynomial((0,)))
 
-        if self.isZero:
+        if self.is_zero:
             return Polynomial((0,)), Polynomial((0,))
         numerator = Polynomial(self.coeffs)
         denominator = other
@@ -219,7 +271,7 @@ class Polynomial:
 
     def __floordiv__(self, other: 'Polynomial' | Number) -> "Polynomial":
         """Return quotient of polynomial division, self // other."""
-        if isinstance(other, (int, float)):
+        if isinstance(other, Number):
             if other == 0:
                 raise ZeroDivisionError(
                     "Cannot divide polynomial by zero scalar.")
@@ -227,7 +279,7 @@ class Polynomial:
         if not isinstance(other, Polynomial):
             return NotImplemented
         if other.degree == 0:
-            if other.isZero:
+            if other.is_zero:
                 raise ZeroDivisionError(
                     "Cannot divide polynomial by the zero polynomial.")
             return Polynomial(coeff // other.leading for coeff in self.coeffs)
@@ -236,7 +288,7 @@ class Polynomial:
 
     def __mod__(self, other: 'Polynomial' | Number) -> "Polynomial":
         """Return remainder of polynomial division, self % other."""
-        if isinstance(other, (int, float)):
+        if isinstance(other, Number):
             if other == 0:
                 raise ZeroDivisionError(
                     "Cannot divide polynomial by scalar zero.")
@@ -258,12 +310,72 @@ class Polynomial:
                                          enumerate(self.coeffs)))
 
 
+def convolution(p: list[Number], q: list[Number]) -> list[Number]:
+    """
+    Implements convolution multiplication of polynomials.
+    """
+    product: list[Number] = [0]*(len(p)+len(q)-1)
+    for i, p_i in enumerate(p):
+        for j, q_j in enumerate(q):
+            product[i+j] += p_i * q_j
+    return product
+
+
+def karat_driver(p: list[Number], q: list[Number]) -> list[Number]:
+    """
+    Provides padding logic for Karatsuba method.
+    """
+    def karat_mult_poly(p: list[Number], q: list[Number]) -> list[Number]:
+        """
+        Implements Karatsuba algorithm for polynomial multiplication
+
+        Assume both p and q have equal power of 2 lengths.
+        """
+        n = len(p)  # p and q degree = n-1
+        if n == 1:
+            return [p[0]*q[0]]
+
+        m = n//2
+        # Divide
+        p0, p1, q0, q1 = p[:m], p[m:], q[:m], q[m:]  # each len = m
+        p_sum = [a + b for a, b in zip(p0, p1)]  # len = m
+        q_sum = [a + b for a, b in zip(q0, q1)]  # len = m
+
+        # Conquer
+        r1 = karat_mult_poly(p0, q0)  # len = 2*m - 1, degree = 2*m
+        r2 = karat_mult_poly(p1, q1)  # len = 2*m - 1
+        r3 = karat_mult_poly(p_sum, q_sum)  # len = 2*m - 1
+        r4 = [r3[i] - r1[i] - r2[i] for i in range(2*m - 1)]
+
+        r: list[Number] = [0]*(2*n-1)  # len = 4*m - 1, degree = 2*n - 2
+        for i in range(2*m-1):
+            r[i] += r1[i]
+            r[i+m] += r4[i]
+            r[i+2*m] += r2[i]
+
+        return r
+
+    max_len = max(len(p), len(q))
+    if max_len & (max_len - 1) == 0:
+        n = max_len
+    else:
+        n = 1 << max_len.bit_length()
+
+    padded_p = p + [0]*(n - len(p))
+    padded_q = q + [0]*(n - len(q))
+    return karat_mult_poly(padded_p, padded_q)
+
+
+def fft_driver(p: list[Number], q: list[Number]) -> list[Number]:
+    result = FFT.multiply_polynomials(poly1=p, poly2=q)
+    result = [round(x, 6) for x in result]
+    return result
+
+
 if __name__ == "__main__":
     x = Polynomial((0, 1))
-
     p = x**5 + 5*x**2 + 1
     q = x**2 + 2*x + 1
-
     print("p(x) =", p)
     print("q(x) =", q)
     print("q(2) =", q(2))

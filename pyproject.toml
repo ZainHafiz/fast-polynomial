@@ -1,11 +1,11 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61.0", "pybind11"]
+build-backend = "setuptools.build_meta"
 
 [project]
-name = "algebra_lab"
+name = "fast_polynomial"
 version = "0.1"
-description = "A tiny algebra library with polynomial arithmetic."
+description = "Immutable univariate polynomial with three multiplication algorithms."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -15,5 +15,5 @@ authors = [
 
 dependencies = []
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/algebra_lab"]
+[tool.setuptools.packages.find]
+where = ["src"]

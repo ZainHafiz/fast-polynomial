@@ -1,5 +1,5 @@
 import pytest
-from algebra_lab import Polynomial
+from fast_polynomial import Polynomial
 
 
 # -----------------------------
@@ -362,3 +362,63 @@ def test_divmod_by_scalar():
     q, r = divmod(p, 2)
     assert q.coeffs == (1, 2, 3)
     assert r.coeffs == (0,)
+
+
+# -----------------------------
+# Multiplication algorithms (convolution, karatsuba, fft)
+# -----------------------------
+
+# Known small products, checked by hand.
+# (x + 1)(x + 2) = x^2 + 3x + 2  -> coeffs (2, 3, 1)
+# (2x^2 + 1)(x + 3) = 2x^3 + 6x^2 + x + 3 -> coeffs (3, 1, 6, 2)
+MULT_CASES = [
+    ((1, 1), (2, 1), (2, 3, 1)),
+    ((1, 0, 2), (3, 1), (3, 1, 6, 2)),
+    ((1,), (5, 4, 3), (5, 4, 3)),        # constant times polynomial
+    ((1, -1), (1, 1), (1, 0, -1)),       # (1 - x)(1 + x) = 1 - x^2
+]
+
+
+@pytest.mark.parametrize("method", ["convolution", "karatsuba", "fft"])
+@pytest.mark.parametrize("a, b, expected", MULT_CASES)
+def test_multiply_methods_correct(method, a, b, expected):
+    """Each forced algorithm produces the correct product on known inputs."""
+    p = poly(a)
+    q = poly(b)
+    result = p.multiply(q, method=method)
+    # Compare coefficient-wise with tolerance, since fft returns floats.
+    assert result.coeffs == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(
+    "a, b",
+    [
+        ((1, 2, 3, 4), (5, 6, 7)),
+        ((0, 0, 1), (1, 1, 1, 1)),
+        ((2, -3, 0, 1, 5), (1, 0, -2)),
+    ],
+)
+def test_multiply_methods_agree(a, b):
+    """convolution, karatsuba and fft give the same product."""
+    p = poly(a)
+    q = poly(b)
+    conv = p.multiply(q, method="convolution")
+    karat = p.multiply(q, method="karatsuba")
+    fft = p.multiply(q, method="fft")
+    assert karat.coeffs == pytest.approx(conv.coeffs)
+    assert fft.coeffs == pytest.approx(conv.coeffs)
+
+
+def test_multiply_invalid_method_raises():
+    """An unknown method string is rejected."""
+    p = poly((1, 1))
+    q = poly((1, 1))
+    with pytest.raises(ValueError):
+        p.multiply(q, method="nonsense")
+
+
+def test_multiply_non_polynomial_raises():
+    """Multiplying by a non-polynomial raises TypeError."""
+    p = poly((1, 1))
+    with pytest.raises(TypeError):
+        p.multiply("hello", method="convolution")
