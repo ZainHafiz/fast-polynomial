@@ -51,7 +51,7 @@ language (C++ vs Python), so the gap is not purely algorithmic.
 ## Usage
 
 ```py
->>> from algebra_lab import Polynomial
+>>> from fast_polynomial import Polynomial
 >>> x = Polynomial((0, 1))        # the variable x
 >>> p = x**2 + 3*x + 2
 >>> print(p)
